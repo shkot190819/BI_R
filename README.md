@@ -1,1 +1,1 @@
-# BI_R
+#### Statistic homework
