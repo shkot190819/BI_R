@@ -1,0 +1,206 @@
+---
+title: "Mussels"
+date: "2022-11-25"
+output: 
+  html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(psych)
+library(car)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+theme_set(theme_bw())
+knitr::opts_knit$set(root.dir = "C:/Users/buyko/Desktop/BI_R_project/Data/Data")
+data_aggregate <- function(path) {
+  filenames <- list.files(path, pattern="*.csv")
+  mussels <<- tibble()
+  func <- function(x) {
+    df <- read.csv(x)
+    df[,2] <- as.factor(df[,2])
+    mussels <<- rbind(mussels, df)
+  }
+  lapply(filenames, func) 
+  return("Data were aggregated")
+}
+
+```
+
+## Function to gather observations
+
+This function merges all files of the same extension from a given folder, the path to the folder is passed as a function argument
+
+```{r eval=FALSE, include=TRUE}
+
+data_aggregate <- function(path) {
+  filenames <- list.files(path, pattern="*.csv")
+  mussels <<- tibble()
+  func <- function(x) {
+    df <- read.csv(x)
+    df[,2] <- as.factor(df[,2])
+    mussels <<- rbind(mussels, df)
+  }
+  lapply(filenames, func) 
+  return("Data were aggregated")
+}
+
+```
+#### Run function on current data
+
+```{r include=TRUE}
+data_aggregate("C:/Users/buyko/Desktop/BI_R_project/Data/Data")
+
+```
+## EDA
+#### Renaming and changing the type of some variables and values correction in the "Sex" variable
+The values of the sex variable were corrected (duplicate levels of the factor were removed)\
+Rows with missing values were removed
+```{r warning=FALSE, include=TRUE}
+names <- colnames(mussels) 
+names[2] <- 'Sex'
+colnames(mussels) <- names
+  
+levels(mussels$Sex)[c(1,6)] <- 'male'
+levels(mussels$Sex)[2] <- 'female'
+levels(mussels$Sex)[c(3, 4)] <- 'uvenil'
+
+
+mussels$Length <- as.double(mussels$Length)
+mussels$Rings <- as.integer(mussels$Rings)
+
+mussels <- na.omit(mussels)
+```
+
+
+#### Visualising outliers
+Numeric variables only
+
+```{r , echo=FALSE}
+
+boxplot(mussels[,c(3:9)], col='#AFEEEE')
+
+```
+
+#### Assessment of the correlations between the variables
+
+```{r mussels, echo=FALSE}
+plot(mussels[,c(1,3:9)])
+```
+\
+Two outliers significantly affecting the correlation of the Height variable were removed.
+
+```{r}
+boxplot.stats(mussels$Height)$out
+mussels$Height[mussels$Height %in% c(1.130, 0.515)] <- NA
+mussels <- na.omit(mussels)
+```
+See how the interaction graphs have changed
+
+```{r echo = FALSE}
+plot(mussels[,c(1,3:9)])
+```
+
+\
+All numeric variables are directly related to each other \
+Hypothesis: \
+- A linear correlation between pairs of numeric variables\
+- No differences between groups by the nominative variable "Sex"
+
+## Mean value and standard deviation of the variable Length for clams of different sexes
+
+```{r}
+mussels %>% group_by(Sex) %>% 
+  summarise(mean=mean(Length), sd=sd(Length))
+```
+
+
+## Percentage of clams, the value of the Height variable does not exceed 0.165
+
+```{r}
+sum(mussels$Height<=0.165)/4153*100
+```
+
+## Value of the variable Length, which is greater than 92% of all observations
+
+
+```{r}
+# 4153/100*92 = 3820.76
+sort(mussels$Length)[3821]
+```
+
+## Length z-standartization
+
+
+```{r}
+Length_mean <- mean(mussels$Length)
+Length_sd <- sd(mussels$Length)
+mussels$Lenght_z_scores <- (mussels$Length - Length_mean)/Length_sd
+```
+
+A new variable Lenght_z_scores was created. The values of the Length variable after standardization were saved in this variable
+
+
+## Comparison of the diameter of clams with the number of rings 5 and 15
+
+#### Selection of values suitable for the parameters and normality check
+```{r}
+mussels_5_15 <- mussels %>% select(Rings, Diameter) %>% 
+  filter(Rings==5 | Rings==15) %>% 
+  transmute(Rings=as.factor(Rings), Diameter)
+
+by(mussels_5_15$Diameter, INDICES=mussels_5_15$Rings, shapiro.test)  #Shapiro–Wilk test
+
+ggplot(mussels_5_15, aes(Diameter, fill=Rings)) + 
+  geom_histogram(color='black', alpha=.5, binwidth=0.01)
+```
+\
+The values within the groups are normally distributed
+
+#### Comparison of group averages (t-test)
+```{r}
+df <- mussels_5_15 %>% group_by(Rings) %>% 
+  summarise(mean=round(mean(Diameter), digits=3), sd=round(sd(Diameter), digits=3))
+df %>% transmute(Number_of_rings=Rings, Diameter=paste0(mean, "±", sd))
+
+test1 <- t.test(Diameter ~ Rings, mussels_5_15)
+test1$p.value
+
+p <- mussels_5_15 %>% 
+  group_by(Rings) %>% 
+  summarize(mean=mean(Diameter), sd=sd(Diameter)) %>% 
+  ggplot(aes(x=Rings, y=mean)) + 
+  geom_bar(stat="identity", color="black", fill='#AFEEEE', 
+           position=position_dodge(), width = 0.5) +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2, linewidth=1,
+                position=position_dodge(.9)) 
+p+labs(title="Average diameter of the clams", 
+       x="Rings number", y = "Diameter")+
+  theme_classic() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 14), 
+        title = element_text(size = 14)) 
+
+```
+
+## Relationship of the Diameter and Whole_weight variables
+#### Correlation curve plotting
+```{r}
+ggplot(mussels, aes(x=Diameter, y=Whole_weight)) +
+  geom_point(color='#AFEEEE') +
+  geom_smooth(se = FALSE, color='black', linewidth=1) +
+  labs(title="Diameter vs. whole weight of the clam") + 
+  theme_classic() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 14), 
+        title = element_text(size = 14)) 
+```
+
+#### Calculation of the correlation coefficient
+```{r}
+correlation_d_w <- cor.test(x = mussels$Diameter, y = mussels$Whole_weight)
+correlation_d_w$estimate
+```
+
+\ The correlation coefficient 0.926 (p-value < 2.2e-16, alternative hypothesis: true correlation is not equal to 0) and the correlation curve graph indicate a close relationship between Diameter and Whole_weight variables
+
+
